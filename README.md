@@ -237,16 +237,4 @@ hadoop jar target/top20-mapreduce-1.0.0.jar org.bda.Top20ProductsMR \
 
 ---
 
-## 9. Academic Defense & Viva Q&A (Big Data Analytics)
 
-### Q1: Why use a 60-minute trailing window instead of an absolute calendar hour?
-> **Answer:** Sliding trailing windows ($\text{now} - 60 \text{ min}$) eliminate boundary artifacts. An absolute hourly window resets at the top of every hour (e.g., at 2:01 PM it only has 1 minute of data). A sliding 60-minute trailing window continuously captures a robust sample of recent demand.
-
-### Q2: Why is the dashboard refreshed every 5 minutes instead of strictly real-time?
-> **Answer:** In high-volume e-commerce like Instacart, micro-second fluctuations represent noise. MapReduce is a distributed batch-processing paradigm designed for high throughput across large datasets rather than per-event updates. A 5-minute micro-batch MapReduce interval provides the ideal trade-off between computational efficiency on HDFS and actionable responsiveness for category managers.
-
-### Q3: How is data partitioned on HDFS?
-> **Answer:** Transactions are partitioned temporally into directories: `/data/instacart_transactions/year=YYYY/month=MM/day=DD/hour=HH/`. This allows partition pruning so the MapReduce input reader only scans partitions covering the relevant 60-minute window rather than scanning historical years of data.
-
-### Q4: How does the pipeline handle backpressure and fault tolerance?
-> **Answer:** Kafka decouples transaction generation from HDFS ingestion. If HDFS or MapReduce is busy, messages remain safely stored in Kafka partitions according to topic retention policies. Kafka consumer offset commits guarantee at-least-once delivery into HDFS.
