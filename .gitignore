@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Temporary streaming runtime data and logs
+*.log
+storage/kafka_commit_log.jsonl
+storage/mapreduce_job_history.json
+storage/hdfs/data/instacart_transactions/
+storage/hdfs/output/trailing_60min/
+
+# Preserve empty directory anchors
+!storage/hdfs/data/.gitkeep
+!storage/hdfs/output/.gitkeep
+
+# OS and Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Maven / Java
+target/
+*.class
+.project
+.classpath
+.settings/

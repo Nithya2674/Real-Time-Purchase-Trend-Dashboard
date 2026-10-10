@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Real-Time Purchase Trend Dashboard | Big Data Analytics</title>
+  <meta name="description" content="Streaming purchase transactions via Kafka, HDFS storage, and 5-minute MapReduce trailing 60-minute top 20 products dashboard for Category Managers.">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <!-- Ambient background glow elements -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+  <div class="ambient-glow glow-3"></div>
+
+  <div class="app-container">
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="brand-logo">
+          <i class="fa-solid fa-chart-line"></i>
+        </div>
+        <div>
+          <div class="brand-title-row">
+            <h1 class="brand-title">Instacart TrendPulse</h1>
+            <span class="badge badge-accent">Problem 21 &bull; BDA</span>
+            <span class="badge badge-stream"><i class="fa-solid fa-circle-dot pulse-icon"></i> Live Kafka Stream</span>
+          </div>
+          <p class="brand-subtitle">Real-Time Purchase Trend Dashboard &bull; Trailing 60-Min MapReduce Window (Refreshed Every 5 Min)</p>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <!-- 5-Minute Scheduler Countdown Card -->
+        <div class="scheduler-pill" id="schedulerPill">
+          <div class="timer-icon-wrap">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+          </div>
+          <div class="timer-details">
+            <span class="timer-label">Next MapReduce Refresh</span>
+            <span class="timer-countdown" id="countdownDisplay">05:00</span>
+          </div>
+          <button class="btn btn-primary btn-sm" id="btnTriggerMR" title="Force execute MapReduce job now">
+            <i class="fa-solid fa-bolt"></i> Run MapReduce
+          </button>
+        </div>
+
+        <!-- Controls -->
+        <button class="btn btn-secondary btn-icon" id="btnToggleSimModal" title="Simulation & Stream Controls">
+          <i class="fa-solid fa-sliders"></i>
+        </button>
+        <button class="btn btn-secondary btn-icon" id="btnToggleHdfsModal" title="Inspect HDFS & MR Logs">
+          <i class="fa-solid fa-database"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Architecture Visualizer Banner -->
+    <section class="pipeline-arch-section">
+      <div class="pipeline-arch-card">
+        <div class="pipeline-node" id="nodeSource">
+          <div class="node-icon bg-emerald"><i class="fa-solid fa-cart-shopping"></i></div>
+          <div class="node-info">
+            <span class="node-title">Instacart Stream</span>
+            <span class="node-metric" id="archTpsMetric">8.5 tx/s</span>
+          </div>
+        </div>
+        <div class="pipeline-connector">
+          <div class="packet-stream"></div>
+          <i class="fa-solid fa-arrow-right"></i>
+        </div>
+        <div class="pipeline-node" id="nodeKafka">
+          <div class="node-icon bg-cyan"><i class="fa-solid fa-layer-group"></i></div>
+          <div class="node-info">
+            <span class="node-title">Kafka Broker</span>
+            <span class="node-metric" id="archKafkaTopic">instacart-transactions</span>
+          </div>
+        </div>
+        <div class="pipeline-connector">
+          <div class="packet-stream"></div>
+          <i class="fa-solid fa-arrow-right"></i>
+        </div>
+        <div class="pipeline-node" id="nodeHdfs">
+          <div class="node-icon bg-amber"><i class="fa-solid fa-hard-drive"></i></div>
+          <div class="node-info">
+            <span class="node-title">Hadoop HDFS</span>
+            <span class="node-metric" id="archHdfsRecords">0 records</span>
+          </div>
+        </div>
+        <div class="pipeline-connector">
+          <div class="packet-stream"></div>
+          <i class="fa-solid fa-arrow-right"></i>
+        </div>
+        <div class="pipeline-node" id="nodeMR">
+          <div class="node-icon bg-violet"><i class="fa-solid fa-gears"></i></div>
+          <div class="node-info">
+            <span class="node-title">MapReduce Job</span>
+            <span class="node-metric" id="archMrStatus">Trailing 60m Filter</span>
+          </div>
+        </div>
+        <div class="pipeline-connector">
+          <div class="packet-stream"></div>
+          <i class="fa-solid fa-arrow-right"></i>
+        </div>
+        <div class="pipeline-node active-pulse" id="nodeDashboard">
+          <div class="node-icon bg-rose"><i class="fa-solid fa-chart-pie"></i></div>
+          <div class="node-info">
+            <span class="node-title">Live Top 20</span>
+            <span class="node-metric text-emerald">Active Live</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Key Metrics Grid -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Trailing 60m Units Sold</span>
+          <span class="kpi-icon-wrap text-emerald"><i class="fa-solid fa-boxes-stacked"></i></span>
+        </div>
+        <div class="kpi-value-row">
+          <span class="kpi-value" id="kpiTotalUnits">0</span>
+          <span class="kpi-badge badge-success"><i class="fa-solid fa-arrow-trend-up"></i> Live</span>
+        </div>
+        <span class="kpi-footer" id="kpiUniqueProducts">Aggregated across 0 active products</span>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Trailing 60m Revenue</span>
+          <span class="kpi-icon-wrap text-cyan"><i class="fa-solid fa-dollar-sign"></i></span>
+        </div>
+        <div class="kpi-value-row">
+          <span class="kpi-value" id="kpiTotalRevenue">$0.00</span>
+          <span class="kpi-badge badge-accent">Instacart GMV</span>
+        </div>
+        <span class="kpi-footer">Based on authentic item price catalog</span>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">Kafka Ingestion Rate</span>
+          <span class="kpi-icon-wrap text-amber"><i class="fa-solid fa-wave-square"></i></span>
+        </div>
+        <div class="kpi-value-row">
+          <span class="kpi-value" id="kpiKafkaRate">0.0</span>
+          <span class="kpi-unit">tx / sec</span>
+        </div>
+        <span class="kpi-footer" id="kpiTotalIngested">0 total purchase events streamed</span>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">HDFS Storage Sink</span>
+          <span class="kpi-icon-wrap text-violet"><i class="fa-solid fa-server"></i></span>
+        </div>
+        <div class="kpi-value-row">
+          <span class="kpi-value" id="kpiHdfsUsage">0.0 MB</span>
+          <span class="kpi-badge badge-info">3x Rep</span>
+        </div>
+        <span class="kpi-footer" id="kpiPartitionPath">Partitioned: year/month/day/hour</span>
+      </div>
+    </section>
+
+    <!-- Category Manager Promotion Surge Alert Banner -->
+    <section class="surge-alert-banner" id="surgeAlertBanner" style="display: none;">
+      <div class="surge-alert-content">
+        <i class="fa-solid fa-fire text-amber fa-beat"></i>
+        <div>
+          <strong>Active Flash Promotion Detected!</strong>
+          <span id="surgeAlertText">Product #47209 (Organic Hass Avocado) surging with 4x transaction multiplier.</span>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-outline" id="btnCancelSurge">End Promotion</button>
+    </section>
+
+    <!-- Main Content Area: Charts & Top 20 Table -->
+    <div class="main-dashboard-grid">
+      <!-- Left Column: Top 20 Products Leaderboard -->
+      <section class="dashboard-col left-col">
+        <div class="glass-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <h2 class="card-title">Top 20 Products by Units Sold</h2>
+              <span class="card-subtitle">Trailing 60 Minutes Window &bull; Computed by Hadoop MapReduce</span>
+            </div>
+            <div class="card-actions">
+              <div class="filter-dropdown-wrap">
+                <select id="departmentFilter" class="select-input">
+                  <option value="ALL">All Departments</option>
+                  <option value="produce">Produce</option>
+                  <option value="dairy eggs">Dairy & Eggs</option>
+                  <option value="beverages">Beverages</option>
+                  <option value="snacks">Snacks</option>
+                  <option value="bakery">Bakery</option>
+                  <option value="meat seafood">Meat & Seafood</option>
+                  <option value="pantry">Pantry & Dry Goods</option>
+                  <option value="frozen">Frozen</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top 20 Products Table -->
+          <div class="table-responsive">
+            <table class="products-table">
+              <thead>
+                <tr>
+                  <th style="width: 60px;">Rank</th>
+                  <th>Product Name & Department</th>
+                  <th style="width: 110px;" class="text-right">Units Sold</th>
+                  <th style="width: 140px;">Share of Volume</th>
+                  <th style="width: 100px;" class="text-right">Est. Revenue</th>
+                  <th style="width: 90px;" class="text-center">Trend Shift</th>
+                  <th style="width: 70px;" class="text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="topProductsTableBody">
+                <!-- Dynamically populated rows -->
+                <tr>
+                  <td colspan="7" class="loading-state">
+                    <i class="fa-solid fa-spinner fa-spin"></i> Initializing trailing 60-minute MapReduce data...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Visual Trends & Insights -->
+      <section class="dashboard-col right-col">
+        <!-- Trend Velocity Chart (Detect Same-Day Popularity Shifts) -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Minute-by-Minute Velocity Shift</h2>
+              <span class="card-subtitle">Trailing 60m Units Sold over time (Category Shift Tracker)</span>
+            </div>
+            <span class="badge badge-accent"><i class="fa-solid fa-bolt"></i> Real-Time</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="trendVelocityChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Department Breakdown Donut & Top Bar Chart -->
+        <div class="charts-sub-grid">
+          <div class="glass-card">
+            <div class="card-header">
+              <h3 class="card-title-sm">Top 5 Leaders Units</h3>
+            </div>
+            <div class="chart-container-sm">
+              <canvas id="top5BarChart"></canvas>
+            </div>
+          </div>
+
+          <div class="glass-card">
+            <div class="card-header">
+              <h3 class="card-title-sm">Department Volume Share</h3>
+            </div>
+            <div class="chart-container-sm">
+              <canvas id="departmentDonutChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Streaming Transaction Ticker -->
+        <div class="glass-card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title-sm">Kafka Live Ingestion Feed</h3>
+              <span class="card-subtitle">Streamed directly from topic: <code>instacart-transactions</code></span>
+            </div>
+            <span class="badge badge-stream"><span class="ticker-dot"></span> Streaming</span>
+          </div>
+          <div class="live-ticker-list" id="liveTickerList">
+            <!-- Dynamic stream items -->
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Simulation & Stream Controls Modal -->
+  <div class="modal-overlay" id="simModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title"><i class="fa-solid fa-sliders"></i> Stream Simulation & Promo Injection</h3>
+        <button class="modal-close" id="btnCloseSimModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Category managers use this tool to simulate promotional flash sales or test immediate same-day ranking shifts in product popularity.
+        </p>
+
+        <div class="control-group">
+          <label class="control-label">Kafka Transaction Streaming Rate: <span id="rateValueLabel" class="text-emerald">8.0 tx/s</span></label>
+          <input type="range" id="rateSlider" min="1" max="40" step="1" value="8" class="range-slider">
+          <div class="range-marks">
+            <span>1 tx/s</span>
+            <span>10 tx/s</span>
+            <span>25 tx/s</span>
+            <span>40 tx/s</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label">Stream Execution State</label>
+          <div class="btn-group">
+            <button class="btn btn-secondary active" id="btnResumeStream"><i class="fa-solid fa-play"></i> Streaming</button>
+            <button class="btn btn-secondary" id="btnPauseStream"><i class="fa-solid fa-pause"></i> Pause Stream</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label">MapReduce Refresh Cycle</label>
+          <div class="btn-group">
+            <button class="btn btn-secondary active" id="btnInterval5m">Standard (5 Minutes)</button>
+            <button class="btn btn-secondary" id="btnInterval30s">Demo Fast (30 Seconds)</button>
+            <button class="btn btn-secondary" id="btnInterval60s">Demo Fast (60 Seconds)</button>
+          </div>
+        </div>
+
+        <div class="control-group promo-group">
+          <label class="control-label"><i class="fa-solid fa-bolt text-amber"></i> Trigger Promotional Flash Sale (Simulate Rank Jump)</label>
+          <div class="promo-inputs">
+            <select id="promoProductSelect" class="select-input select-full">
+              <!-- Dynamically populated from catalog -->
+            </select>
+            <button class="btn btn-primary" id="btnInjectPromo">
+              <i class="fa-solid fa-fire"></i> Trigger 4x Promo Spike
+            </button>
+          </div>
+          <small class="helper-text">Increases purchase probability 400% for 45s. Watch the product climb the Top 20 ranking upon the next MapReduce run!</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HDFS & MapReduce Inspector Modal -->
+  <div class="modal-overlay" id="hdfsModal">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3 class="modal-title"><i class="fa-solid fa-terminal"></i> Hadoop HDFS & MapReduce Execution Inspector</h3>
+        <button class="modal-close" id="btnCloseHdfsModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="inspector-tabs">
+          <button class="tab-btn active" id="tabBtnMR">MapReduce Job Metrics</button>
+          <button class="tab-btn" id="tabBtnHDFS">HDFS File Hierarchy</button>
+        </div>
+
+        <div class="tab-content" id="tabContentMR">
+          <div class="mr-job-summary" id="mrJobSummary">
+            <div class="mr-metric-box">
+              <span class="mr-label">Map Input Records</span>
+              <span class="mr-val" id="mrMapIn">0</span>
+            </div>
+            <div class="mr-metric-box">
+              <span class="mr-label">Map Output Pairs</span>
+              <span class="mr-val" id="mrMapOut">0</span>
+            </div>
+            <div class="mr-metric-box">
+              <span class="mr-label">Reduce Groups (Keys)</span>
+              <span class="mr-val" id="mrReduceGroups">0</span>
+            </div>
+            <div class="mr-metric-box">
+              <span class="mr-label">Job Execution Time</span>
+              <span class="mr-val" id="mrDuration">0 ms</span>
+            </div>
+          </div>
+          <h4 class="inspector-subtitle">Recent Hadoop MapReduce Jobs Log</h4>
+          <div class="console-box" id="mrConsoleBox">
+            <!-- Job logs -->
+          </div>
+        </div>
+
+        <div class="tab-content" id="tabContentHDFS" style="display: none;">
+          <div class="hdfs-summary-row">
+            <div><strong>Namenode URI:</strong> <code>hdfs://namenode:9000</code></div>
+            <div><strong>Replication Factor:</strong> <code>3x</code></div>
+            <div><strong>Block Size:</strong> <code>128 MB</code></div>
+          </div>
+          <div class="hdfs-file-table-wrap">
+            <table class="hdfs-file-table">
+              <thead>
+                <tr>
+                  <th>HDFS Partition Path</th>
+                  <th>Size</th>
+                  <th>Replication</th>
+                  <th>Permission</th>
+                </tr>
+              </thead>
+              <tbody id="hdfsFileTableBody">
+                <!-- HDFS Files -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MapReduce Execution Progress Toast Modal -->
+  <div class="mr-progress-overlay" id="mrProgressModal" style="display: none;">
+    <div class="mr-progress-card">
+      <div class="mr-progress-header">
+        <i class="fa-solid fa-gear fa-spin text-violet"></i>
+        <span>Hadoop MapReduce Aggregation in Progress</span>
+      </div>
+      <div class="mr-steps">
+        <div class="mr-step-item" id="mrStep1">
+          <span class="mr-step-badge"><i class="fa-solid fa-check"></i></span>
+          <span>1. Loading Trailing 60-Min Input Split from HDFS</span>
+        </div>
+        <div class="mr-step-item" id="mrStep2">
+          <span class="mr-step-badge"><i class="fa-solid fa-check"></i></span>
+          <span>2. Map Phase: Filtering timestamps & emitting (product_id, quantity)</span>
+        </div>
+        <div class="mr-step-item" id="mrStep3">
+          <span class="mr-step-badge"><i class="fa-solid fa-check"></i></span>
+          <span>3. Partition & Shuffle/Sort: Grouping by Product ID</span>
+        </div>
+        <div class="mr-step-item" id="mrStep4">
+          <span class="mr-step-badge"><i class="fa-solid fa-check"></i></span>
+          <span>4. Reduce Phase: Computing units sold & top 20 priority queue</span>
+        </div>
+        <div class="mr-step-item" id="mrStep5">
+          <span class="mr-step-badge"><i class="fa-solid fa-check"></i></span>
+          <span>5. Committing output to HDFS /output/trailing_60min/top20_latest.json</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
